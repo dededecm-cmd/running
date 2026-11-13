@@ -80,6 +80,18 @@ button:focus-visible{outline:3px solid var(--warm);outline-offset:2px}
 .rep{font-family:var(--display);font-stretch:condensed;font-weight:700;font-size:1.15rem;color:var(--muted)}
 .time{font-family:var(--display);font-stretch:condensed;font-weight:800;font-size:clamp(5.5rem,30vw,9rem);line-height:1;font-variant-numeric:tabular-nums}
 .hint{color:var(--muted);text-align:center;min-height:1.3em}
+.unit{font-size:.85rem;color:var(--muted);margin-top:-6px;min-height:1em}
+.live{display:grid;grid-template-columns:1.35fr 1fr 1fr;gap:8px;width:100%;margin-top:8px}
+.live>div{background:var(--card2);border-radius:12px;padding:8px 10px;display:flex;flex-direction:column;border:2px solid transparent;min-width:0}
+.live span{font-size:.68rem;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);font-weight:700}
+.live b{font-family:var(--display);font-stretch:condensed;font-weight:800;font-size:1.7rem;line-height:1.05;font-variant-numeric:tabular-nums;white-space:nowrap}
+.live small{font-size:.75rem;color:var(--muted);white-space:nowrap}
+.live .pbox b{font-size:2.6rem}
+.pbox.ok{border-color:var(--easy)}.pbox.ok b{color:var(--easy)}
+.pbox.fast{border-color:var(--vma)}.pbox.fast b{color:var(--vma)}
+.pbox.slow{border-color:var(--warm)}.pbox.slow b{color:var(--warm)}
+.gps{font-size:.82rem;color:var(--muted);text-align:center;margin-top:-4px}
+.gps.ok{color:var(--easy)}.gps.bad{color:var(--vma)}.gps.warn{color:var(--k10)}
 .after{font-size:.85rem;color:var(--muted)}
 .after b{color:var(--fg)}
 .note{font-size:.82rem;color:var(--muted);line-height:1.45;margin:0}
@@ -106,23 +118,31 @@ label{font-size:.88rem;color:var(--muted);display:flex;flex-direction:column;gap
     <div class="phase" id="r-phase">Prêt</div>
     <div class="rep" id="r-rep"></div>
     <div class="time" id="r-time">0:00</div>
+    <div class="unit" id="r-unit"></div>
     <div class="hint" id="r-hint"></div>
     <div class="bar"><i id="r-bar"></i></div>
+    <div class="live">
+      <div class="pbox" id="r-pbox"><span>Allure /km</span><b id="r-pace">–:––</b><small id="r-target">&nbsp;</small></div>
+      <div><span>Étape</span><b id="r-sdist">0 m</b><small id="r-sel">0:00</small></div>
+      <div><span>Total</span><b id="r-tdist">0,00</b><small id="r-tel">km · 0:00</small></div>
+    </div>
     <div class="after" id="r-next"></div>
   </div>
+  <div class="gps" id="r-gps"></div>
   <div class="btns">
     <button class="main" id="r-go">Démarrer</button>
     <button id="r-skip" disabled>Étape suivante</button>
     <button id="r-reset">Recommencer</button>
   </div>
   <ol class="steps" id="r-list"></ol>
-  <p class="note">Les étapes en distance sont chronométrées à l'allure prévue : si ta montre bipe la distance avant, appuie sur « Étape suivante ». L'écran reste allumé tant que le chrono tourne.</p>
+  <p class="note">Avec le GPS, les étapes en distance s'arrêtent à la vraie distance. Sans signal, elles sont chronométrées à l'allure prévue. Garde l'appli ouverte : si tu verrouilles le téléphone, le GPS se met en pause.</p>
 </main>
 <main id="v-set" hidden></main>
 <div class="sheet" id="sheet" hidden><div>
   <div class="eyebrow" id="sh-title">Séance terminée</div>
   <h1 style="font-size:1.5rem">Comment tu l'as sentie ?</h1>
   <div class="feel" id="sh-feel"></div>
+  <div class="nm" id="sh-gps" hidden></div>
   <label id="sh-distw" hidden>Distance parcourue pendant les 6 min (m)<input id="sh-dist" type="number" inputmode="numeric" placeholder="ex. 1400"></label>
   <label>Note (facultatif)<textarea id="sh-note" rows="2" placeholder="Jambes lourdes, vent, super forme…"></textarea></label>
   <div class="btns"><button id="sh-cancel">Annuler</button><button id="sh-save" style="background:var(--easy);color:#0b1a0f;border-color:var(--easy)">Valider</button></div>
@@ -131,7 +151,8 @@ label{font-size:.88rem;color:var(--muted);display:flex;flex-direction:column;gap
 <script>
 const $=s=>document.querySelector(s);
 const ls={get(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},set(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
-let S=Object.assign({easy:375,vma:250,voice:true},ls.get('run.settings',{}));
+let S=Object.assign({easy:375,vma:250,voice:true,gps:true,splits:true,paceAlert:true},ls.get('run.settings',{}));
+function dl(text,name,type){const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([text],{type}));a.download=name;document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1000)}
 let LOG=ls.get('run.log',{});
 const COL={warm:'var(--warm)',easy:'var(--easy)',long:'var(--long)',k10:'var(--k10)',vma:'var(--vma)',race:'var(--race)',rec:'var(--rec)',cool:'var(--cool)'};
 const TYPE={easy:'Facile',long:'Sortie longue',k10:'Allure 10 km',vma:'VMA',race:'Course'};
@@ -211,7 +232,7 @@ function stepName(st){return st.n+(st.r?' · '+st.r+'/'+st.of:'')+(st.m&&!st.n.i
 let cur='home',curId=null;
 function show(v){['home','sess','run','set'].forEach(x=>$('#v-'+x).hidden=x!==v);cur=v;window.scrollTo(0,0)}
 function nav(v,id){history.pushState({v,id},'');route(v,id)}
-function route(v,id){if(cur==='run'&&v!=='run'&&RS&&RS.running)pause();curId=id||curId;
+function route(v,id){if(cur==='run'&&v!=='run'){if(RS&&RS.running)pause();gpsStop()}curId=id||curId;
   if(v==='home')renderHome();else if(v==='sess')renderSess(curId);else if(v==='set')renderSet();show(v)}
 window.addEventListener('popstate',e=>{const st=e.state||{v:'home'};$('#sheet').hidden=true;route(st.v,st.id)});
 document.addEventListener('click',e=>{
@@ -250,12 +271,25 @@ function renderSess(id){
   <div class="hero" style="--c:${COL[s.type]}"><span class="chip">${TYPE[s.type]}${s.optional?' · optionnel':''}</span><h1>${esc(s.title)}</h1><div class="nm">≈ ${fmtKm(s.km)} km · ${fmt(total(s))} au chrono</div></div>
   <ul class="desc">${(s.desc||[]).map(x=>`<li>${esc(x)}</li>`).join('')}</ul>
   <h2>Déroulé</h2><ol class="steps">${s.steps.map(st=>`<li style="--c:${COL[st.k]}"><b>${esc(stepName(st))}</b><span>${fmt(dur(st))}</span></li>`).join('')}</ol>`;
-  if(L)h+=`<div class="logged"><b>✓ Séance faite ${FEEL[L.feel]||''}</b>${L.dist?`<p>Test : ${L.dist} m → VMA ${fmtKm((L.dist/100).toFixed(1))} km/h</p>`:''}${L.note?`<p>${esc(L.note)}</p>`:''}<button class="link" id="undo">Annuler la validation</button></div>`;
-  h+=`<div class="actions"><button class="main" id="start">Lancer le chrono</button><button id="mark">${L?'Modifier le ressenti':'Marquer comme faite'}</button></div>`;
+  if(L)h+=`<div class="logged"><b>✓ Séance faite ${FEEL[L.feel]||''}</b>${L.dist?`<p>Test : ${L.dist} m → VMA ${fmtKm((L.dist/100).toFixed(1))} km/h</p>`:''}${L.gps?`<p>GPS : ${fmtKm(L.gps.km)} km en ${fmt(L.gps.time)} · moy. ${fp(L.gps.time/L.gps.km)}/km${L.gps.splits&&L.gps.splits.length?'<br>Splits : '+L.gps.splits.map(fp).join(' · '):''}</p>`:''}${L.note?`<p>${esc(L.note)}</p>`:''}<button class="link" id="undo">Annuler la validation</button></div>`;
+  const hasTrk=!!ls.get('run.trk.'+id,null);
+  h+=`<div class="actions"><button class="main" id="start">Lancer le chrono</button>${hasTrk?'<button id="gpx">Exporter le GPX (Strava)</button>':''}<button id="mark">${L?'Modifier le ressenti':'Marquer comme faite'}</button></div>`;
   $('#v-sess').innerHTML=h;
   $('#start').onclick=()=>{openRun(id);nav('run',id)};
   $('#mark').onclick=()=>openSheet(id,false);
-  if(L)$('#undo').onclick=()=>{delete LOG[id];ls.set('run.log',LOG);renderSess(id)};
+  if(L)$('#undo').onclick=()=>{delete LOG[id];ls.set('run.log',LOG);try{localStorage.removeItem('run.trk.'+id)}catch(e){}renderSess(id)};
+  if(hasTrk)$('#gpx').onclick=()=>gpx(id);
+}
+function gpx(id){
+  const tr=ls.get('run.trk.'+id,null),s=SESS[id];if(!tr||tr.length<2)return;
+  const iso=t=>new Date(t*1000).toISOString();
+  const pts=tr.map(p=>`<trkpt lat="${p[0]}" lon="${p[1]}">${p[3]!=null?`<ele>${p[3]}</ele>`:''}<time>${iso(p[2])}</time></trkpt>`).join('\n');
+  dl(`<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Run 10 km" xmlns="http://www.topografix.com/GPX/1/1">
+<metadata><name>${esc(s.title)}</name><time>${iso(tr[0][2])}</time></metadata>
+<trk><name>${esc(s.title)}</name><type>running</type><trkseg>
+${pts}
+</trkseg></trk></gpx>`,'run-'+id+'.gpx','application/gpx+xml');
 }
 
 /* ---------- validation ---------- */
@@ -265,55 +299,123 @@ function openSheet(id,fromRun){
   $('#sh-title').textContent=s.title;
   $('#sh-feel').innerHTML=FEEL.slice(1).map((f,j)=>`<button aria-pressed="${shFeel===j+1}" data-f="${j+1}" aria-label="Ressenti ${j+1} sur 5">${f}</button>`).join('');
   $('#sh-feel').querySelectorAll('button').forEach(b=>b.onclick=()=>{shFeel=+b.dataset.f;$('#sh-feel').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed',x===b))});
+  const g=fromRun&&G&&G.total>50,tt=g?el()/1000:0;
+  $('#sh-gps').hidden=!g;if(g)$('#sh-gps').textContent='GPS : '+fmtKm((G.total/1000).toFixed(2))+' km en '+fmt(tt)+' · moyenne '+fp(tt/(G.total/1000))+'/km';
   $('#sh-distw').hidden=!s.test;$('#sh-dist').value=L.dist||'';$('#sh-note').value=L.note||'';
   $('#sheet').hidden=false;
 }
 $('#sh-cancel').onclick=()=>{$('#sheet').hidden=true};
 $('#sh-save').onclick=()=>{
   const s=SESS[shId],d=+$('#sh-dist').value||0;
-  LOG[shId]={feel:shFeel,note:$('#sh-note').value.trim(),at:todayStr()};
+  LOG[shId]=Object.assign({},LOG[shId],{feel:shFeel,note:$('#sh-note').value.trim(),at:todayStr()});
+  if(shFromRun&&G&&G.total>50){LOG[shId].gps={km:+(G.total/1000).toFixed(2),time:Math.round(el()/1000),splits:G.splits.slice()};if(G.pts.length>1)ls.set('run.trk.'+shId,G.pts)}
   if(s.test&&d>500){LOG[shId].dist=d;S.vma=Math.round(360000/d);ls.set('run.settings',S)}
   ls.set('run.log',LOG);$('#sheet').hidden=true;
   history.go(shFromRun?-2:-1);
 };
 
 /* ---------- chrono ---------- */
-let RS=null,ctx=null,lock=null;
+let RS=null,G=null,ctx=null,lock=null;
 function beep(f=880,ms=180,v=.35){try{if(!ctx)return;const o=ctx.createOscillator(),g=ctx.createGain();o.frequency.value=f;o.type='square';g.gain.value=v;o.connect(g);g.connect(ctx.destination);o.start();o.stop(ctx.currentTime+ms/1000)}catch(e){}}
 function vib(p){try{navigator.vibrate&&navigator.vibrate(p)}catch(e){}}
 function say(t){if(!S.voice)return;try{const u=new SpeechSynthesisUtterance(t);u.lang='fr-FR';speechSynthesis.cancel();speechSynthesis.speak(u)}catch(e){}}
 function sdur(sec){const m=Math.floor(sec/60),r=sec%60;return m?(m+' minute'+(m>1?'s':'')+(r?' '+r:'')):(r+' secondes')}
-function space(sec){return Math.floor(sec/60)+' '+String(sec%60).padStart(2,'0')+' au kilo'}
+function space(sec){sec=Math.round(sec);return Math.floor(sec/60)+' '+String(sec%60).padStart(2,'0')+' au kilo'}
 async function wake(){try{lock=await navigator.wakeLock.request('screen')}catch(e){}}
 document.addEventListener('visibilitychange',()=>{if(RS&&RS.running&&document.visibilityState==='visible')wake()});
+function el(){return RS?RS.acc+(RS.running?Date.now()-RS.t0:0):0}
+function fd(m){return m<1000?Math.round(m)+' m':fmtKm((m/1000).toFixed(2))+' km'}
+
+/* ---------- GPS ---------- */
+function hav(a,b){const R=6371000,t=Math.PI/180,dl=(b.lat-a.lat)*t,dn=(b.lon-a.lon)*t;const x=Math.sin(dl/2)**2+Math.cos(a.lat*t)*Math.cos(b.lat*t)*Math.sin(dn/2)**2;return 2*R*Math.asin(Math.sqrt(x))}
+function newG(){return{watch:null,last:null,pts:[],win:[],total:0,step:0,fix:false,lastFix:0,kmNext:1000,kmT:0,splits:[],resumeT:0,lastAlert:0}}
+function gpsStatus(t,c){const e=$('#r-gps');e.textContent=t;e.className='gps '+(c||'')}
+function gpsStart(){
+  if(!S.gps){gpsStatus('GPS désactivé (Réglages)');return}
+  if(!navigator.geolocation){gpsStatus('GPS indisponible sur cet appareil','bad');return}
+  if(G.watch!=null)return;
+  gpsStatus('Recherche du signal GPS…','warn');
+  G.watch=navigator.geolocation.watchPosition(onPos,e=>gpsStatus(e.code===1?'GPS refusé : autorise la localisation pour ce site':'Signal GPS introuvable, va à découvert…','bad'),{enableHighAccuracy:true,maximumAge:0,timeout:20000});
+}
+function gpsStop(){if(G&&G.watch!=null){try{navigator.geolocation.clearWatch(G.watch)}catch(e){}G.watch=null}}
+function onPos(p){
+  if(!G)return;const c=p.coords,pt={lat:c.latitude,lon:c.longitude,t:Date.now(),ele:c.altitude};
+  G.lastFix=pt.t;
+  if(c.accuracy>35){gpsStatus('GPS imprécis (±'+Math.round(c.accuracy)+' m), patiente…','warn');return}
+  G.fix=true;gpsStatus('GPS ok · précision ±'+Math.round(c.accuracy)+' m','ok');
+  if(!RS||!RS.running||RS.i<0||RS.i>=RS.steps.length){G.last=pt;return}
+  if(G.last){
+    const d=hav(G.last,pt),dt=(pt.t-G.last.t)/1000;
+    if(dt<=0)return;
+    if(d/dt>8){G.last=pt;return}   // saut GPS aberrant (>29 km/h)
+    if(d<2)return;                 // bruit à l'arrêt
+    G.total+=d;G.step+=d;G.win.push({t:pt.t,d});
+  }
+  G.last=pt;
+  const L=G.pts[G.pts.length-1];
+  if(!L||pt.t/1000-L[2]>=3)G.pts.push([+pt.lat.toFixed(6),+pt.lon.toFixed(6),Math.round(pt.t/1000),pt.ele!=null?Math.round(pt.ele):null]);
+  if(G.total>=G.kmNext){const n=G.kmNext/1000,t=el()/1000,sp=t-G.kmT;G.kmT=t;G.kmNext+=1000;G.splits.push(Math.round(sp));if(S.splits)say('Kilomètre '+n+', '+space(sp))}
+}
+function livePace(){
+  if(!G||!G.fix||Date.now()-G.lastFix>12000)return null;
+  const now=Date.now();G.win=G.win.filter(x=>now-x.t<=25000);
+  const span=Math.min(25,(now-G.resumeT)/1000);if(span<6)return null;
+  const d=G.win.reduce((a,x)=>a+x.d,0);if(d<15)return 0;
+  return span/d*1000;
+}
+function target(s){
+  if(s.m&&!['easy','cool'].includes(s.k))return{p:pp(s.p),tol:8};
+  if(['easy','warm','cool'].includes(s.k))return{min:365};
+  return null;
+}
+function paintLive(s){
+  const p=livePace(),tg=target(s);let cls='';
+  $('#r-pace').textContent=p==null?'–:––':(p===0||p>900)?'arrêt':fp(p);
+  $('#r-target').textContent=tg?(tg.p?'cible '+fp(tg.p):'facile ≥ 6:05'):' ';
+  if(p&&p<=900&&tg){if(tg.p)cls=p<tg.p-tg.tol?'fast':p>tg.p+tg.tol?'slow':'ok';else cls=p<tg.min?'fast':'ok'}
+  $('#r-pbox').className='pbox '+cls;
+  $('#r-sdist').textContent=fd(G.step);$('#r-sel').textContent=fmt((el()-RS.stepT0)/1000);
+  $('#r-tdist').textContent=fmtKm((G.total/1000).toFixed(2));$('#r-tel').textContent='km · '+fmt(el()/1000);
+  if(S.paceAlert&&s.m&&tg&&tg.p&&(cls==='fast'||cls==='slow')&&el()-RS.stepT0>20000&&Date.now()-G.lastAlert>20000){G.lastAlert=Date.now();say(cls==='fast'?'Trop vite, ralentis':'Trop lent, accélère')}
+}
+function resetLive(){
+  $('#r-pace').textContent='–:––';$('#r-target').textContent=' ';$('#r-pbox').className='pbox';
+  $('#r-sdist').textContent='0 m';$('#r-sel').textContent='0:00';$('#r-tdist').textContent='0,00';$('#r-tel').textContent='km · 0:00';$('#r-unit').textContent='';
+}
+
+/* ---------- moteur ---------- */
 function openRun(id){
-  const s=SESS[id];
-  RS={s,steps:s.steps.map(x=>({...x,d:dur(x)})),i:-1,end:0,left:0,running:false,tick:null,lastBeep:-1};
+  const s=SESS[id];gpsStop();
+  RS={s,steps:s.steps.map(x=>({...x,d:dur(x)})),i:-1,end:0,left:0,running:false,tick:null,lastBeep:-1,acc:0,t0:0,stepT0:0};
+  G=newG();
   $('#r-date').textContent=dlabel(s.date)+' · '+TYPE[s.type];$('#r-title').textContent=s.title;
   $('#r-total').textContent=fmt(total(s));
   $('#r-list').innerHTML=RS.steps.map((st,j)=>`<li id="rs${j}" style="--c:${COL[st.k]}"><b>${esc(stepName(st))}</b><span>${fmt(st.d)}</span></li>`).join('');
-  idle();
+  idle();gpsStart();
 }
 function idle(){
   const f=RS.steps[0];$('#r-panel').style.setProperty('--c',COL[f.k]);
   $('#r-phase').textContent='Prêt';$('#r-rep').textContent=RS.steps.length+' étapes';
-  $('#r-time').textContent=fmt(f.d);$('#r-hint').textContent='Appuie sur Démarrer, le chrono enchaîne tout seul.';
+  $('#r-time').textContent=fmt(f.d);$('#r-hint').textContent='Attends le GPS vert, puis appuie sur Démarrer.';
   $('#r-bar').style.width='0';$('#r-next').innerHTML='Première étape : <b>'+esc(stepName(f))+'</b>';
   const g=$('#r-go');g.textContent='Démarrer';g.disabled=false;$('#r-skip').disabled=true;
-  RS.steps.forEach((x,j)=>$('#rs'+j).className='');
+  RS.steps.forEach((x,j)=>$('#rs'+j).className='');resetLive();
 }
 function paint(){
   const s=RS.steps[RS.i];$('#r-panel').style.setProperty('--c',COL[s.k]);
   $('#r-phase').textContent=s.n;
-  $('#r-rep').textContent=s.r?('Répétition '+s.r+' / '+s.of):('Étape '+(RS.i+1)+' / '+RS.steps.length);
+  $('#r-rep').textContent=(s.r?('Répétition '+s.r+' / '+s.of):('Étape '+(RS.i+1)+' / '+RS.steps.length))+(s.m?(s.dmode?' · distance GPS':' · au chrono'):'');
   $('#r-hint').textContent=s.m?(s.h?s.h+' · ':'')+lab(s.m)+' à '+fp(pp(s.p))+'/km':(s.h||'');
-  const nx=RS.steps[RS.i+1];$('#r-next').innerHTML=nx?'Ensuite : <b>'+esc(stepName(nx))+'</b> · '+fmt(nx.d):'Dernière étape';
+  $('#r-unit').textContent=s.dmode?'mètres restants':'';
+  const nx=RS.steps[RS.i+1];$('#r-next').innerHTML=nx?'Ensuite : <b>'+esc(stepName(nx))+'</b>'+(nx.m?' · '+lab(nx.m):' · '+fmt(nx.d)):'Dernière étape';
   RS.steps.forEach((x,j)=>$('#rs'+j).className=j<RS.i?'done':(j===RS.i?'now':''));
-  const el=$('#rs'+RS.i);el&&el.scrollIntoView({block:'nearest',behavior:'smooth'});
+  const e=$('#rs'+RS.i);e&&e.scrollIntoView({block:'nearest',behavior:'smooth'});
 }
 function enter(j,from){
   RS.i=j;if(j>=RS.steps.length){finish();return}
-  const s=RS.steps[j];RS.end=(from||Date.now())+s.d*1000;RS.lastBeep=-1;paint();
+  const s=RS.steps[j];G.step=0;RS.stepT0=el();RS.lastBeep=-1;RS.cue100=false;
+  s.dmode=!!(s.m&&S.gps&&G.fix&&Date.now()-G.lastFix<10000);
+  RS.end=s.dmode?Infinity:(from||Date.now())+s.d*1000;paint();
   if(s.k==='rec'){beep(600,500);vib(600);say('Récup, '+sdur(s.d))}
   else if(s.r||['vma','race'].includes(s.k)){beep(1200,500);vib([400,100,400]);say('Go ! '+s.n+(s.r?', '+s.r+' sur '+s.of:'')+(s.m?', '+space(pp(s.p)):''))}
   else{beep(800,400);vib(400);say(s.n+', '+(s.m?lab(s.m).replace(',',' virgule ')+' à '+space(pp(s.p)):sdur(s.d)))}
@@ -321,24 +423,42 @@ function enter(j,from){
 function loop(){
   let guard=0;while(RS.running&&RS.end<=Date.now()&&guard++<50){const e=RS.end;enter(RS.i+1,e);if(RS.i>=RS.steps.length)return}
   if(!RS.running)return;
-  const s=RS.steps[RS.i],left=(RS.end-Date.now())/1000;
-  $('#r-time').textContent=fmt(left);$('#r-bar').style.width=(100*(1-left/s.d))+'%';
-  const sec=Math.ceil(left);
-  if(sec===10&&RS.lastBeep!==10&&s.d>30){RS.lastBeep=10;const nx=RS.steps[RS.i+1];if(nx)say('Dix secondes. Ensuite, '+(nx.k==='rec'?'récup':nx.n))}
-  if(sec<=3&&sec>=1&&sec!==RS.lastBeep){RS.lastBeep=sec;beep(880,150);vib(120)}
+  const s=RS.steps[RS.i];
+  if(s.dmode){
+    if(Date.now()-G.lastFix>20000){ // signal perdu : on bascule au chrono pour le reste de l'étape
+      s.dmode=false;RS.end=Date.now()+Math.max(0,(s.m-G.step)/1000*pp(s.p))*1000;
+      gpsStatus('Signal perdu : étape terminée au chrono','bad');paint();return}
+    const left=s.m-G.step;
+    if(left<=0){enter(RS.i+1);return}
+    $('#r-time').textContent=Math.ceil(left);$('#r-bar').style.width=(100*G.step/s.m)+'%';
+    if(left<=100&&!RS.cue100&&s.m>=400){RS.cue100=true;say('Cent mètres')}
+    if(left<=20&&RS.lastBeep!==-2){RS.lastBeep=-2;beep(880,150);vib(120)}
+  }else{
+    const left=(RS.end-Date.now())/1000;
+    $('#r-time').textContent=fmt(left);$('#r-bar').style.width=(100*(1-left/s.d))+'%';
+    const sec=Math.ceil(left);
+    if(sec===10&&RS.lastBeep!==10&&s.d>30){RS.lastBeep=10;const nx=RS.steps[RS.i+1];if(nx)say('Dix secondes. Ensuite, '+(nx.k==='rec'?'récup':nx.n))}
+    if(sec<=3&&sec>=1&&sec!==RS.lastBeep){RS.lastBeep=sec;beep(880,150);vib(120)}
+  }
+  paintLive(s);
 }
 function start(){
   if(!ctx){try{ctx=new(window.AudioContext||window.webkitAudioContext)()}catch(e){}}
   try{ctx&&ctx.resume()}catch(e){}
-  if(RS.i<0)enter(0);else RS.end=Date.now()+RS.left*1000;
-  RS.running=true;clearInterval(RS.tick);RS.tick=setInterval(loop,200);wake();
+  gpsStart();
+  RS.running=true;RS.t0=Date.now();G.resumeT=Date.now();G.last=null;G.win=[];
+  if(RS.i<0)enter(0);else if(!RS.steps[RS.i].dmode)RS.end=Date.now()+RS.left*1000;
+  clearInterval(RS.tick);RS.tick=setInterval(loop,200);wake();
   $('#r-go').textContent='Pause';$('#r-skip').disabled=false;
 }
-function pause(){if(!RS)return;RS.running=false;clearInterval(RS.tick);RS.left=Math.max(0,(RS.end-Date.now())/1000);try{lock&&lock.release()}catch(e){}
+function pause(){
+  if(!RS||!RS.running)return;RS.acc+=Date.now()-RS.t0;RS.running=false;clearInterval(RS.tick);
+  if(RS.end!==Infinity)RS.left=Math.max(0,(RS.end-Date.now())/1000);
+  try{lock&&lock.release()}catch(e){}
   $('#r-go').textContent='Reprendre'}
 function finish(){
-  pause();RS.i=RS.steps.length;RS.steps.forEach((x,j)=>$('#rs'+j).className='done');
-  $('#r-phase').textContent='Terminé';$('#r-rep').textContent=RS.s.title;$('#r-time').textContent='0:00';
+  pause();gpsStop();RS.i=RS.steps.length;RS.steps.forEach((x,j)=>$('#rs'+j).className='done');
+  $('#r-phase').textContent='Terminé';$('#r-rep').textContent=RS.s.title;$('#r-time').textContent='0:00';$('#r-unit').textContent='';
   $('#r-hint').textContent='Séance validée. Étire-toi un peu.';$('#r-bar').style.width='100%';$('#r-next').textContent='';
   $('#r-go').textContent='Terminé';$('#r-go').disabled=true;$('#r-skip').disabled=true;
   beep(1000,700);vib([300,100,300,100,300]);say('Séance terminée. Bien joué !');
@@ -346,7 +466,7 @@ function finish(){
 }
 $('#r-go').onclick=()=>RS.running?pause():start();
 $('#r-skip').onclick=()=>{if(RS.i>=0&&RS.i<RS.steps.length){enter(RS.i+1);if(!RS.running&&RS.i<RS.steps.length)RS.left=RS.steps[RS.i].d}};
-$('#r-reset').onclick=()=>{pause();RS.i=-1;idle()};
+$('#r-reset').onclick=()=>{pause();RS.i=-1;RS.acc=0;const w=G.watch,f=G.fix,lf=G.lastFix;G=newG();G.watch=w;G.fix=f;G.lastFix=lf;idle()};
 
 /* ---------- réglages ---------- */
 function opts(from,to,step,val){let o='';for(let x=from;x<=to;x+=step)o+=`<option value="${x}"${x===val?' selected':''}>${fp(x)}/km${step<10?'':''}</option>`;return o}
@@ -358,6 +478,9 @@ function renderSet(){
     <label>…ou calcule-la depuis ton test demi-Cooper (m en 6 min)<input id="st-test" type="number" inputmode="numeric" placeholder="ex. 1400"></label>
     <div class="nm" id="st-vmainfo"></div>
     <label class="sw">Annonces vocales<input type="checkbox" id="st-voice" ${S.voice?'checked':''}></label>
+    <label class="sw">GPS (allure et distance en direct)<input type="checkbox" id="st-gps" ${S.gps?'checked':''}></label>
+    <label class="sw">Annonce de l'allure à chaque km<input type="checkbox" id="st-splits" ${S.splits?'checked':''}></label>
+    <label class="sw">Alerte « trop vite / trop lent » sur les fractionnés<input type="checkbox" id="st-alert" ${S.paceAlert?'checked':''}></label>
   </div>
   <div class="set">
     <button class="btn" id="st-export">Exporter mon suivi</button>
@@ -370,7 +493,10 @@ function renderSet(){
   $('#st-vma').onchange=e=>{S.vma=+e.target.value;ls.set('run.settings',S);info()};
   $('#st-test').onchange=e=>{const d=+e.target.value;if(d>500){S.vma=Math.round(360000/d);ls.set('run.settings',S);const sel=$('#st-vma');sel.innerHTML=opts(Math.min(220,S.vma-S.vma%5),Math.max(290,S.vma),5,S.vma);if(![...sel.options].some(o=>+o.value===S.vma))sel.insertAdjacentHTML('afterbegin',`<option value="${S.vma}" selected>${fp(S.vma)}/km</option>`);info()}};
   $('#st-voice').onchange=e=>{S.voice=e.target.checked;ls.set('run.settings',S)};
-  $('#st-export').onclick=()=>{const b=new Blob([JSON.stringify({settings:S,log:LOG},null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='suivi-running.json';a.click()};
+  $('#st-gps').onchange=e=>{S.gps=e.target.checked;ls.set('run.settings',S)};
+  $('#st-splits').onchange=e=>{S.splits=e.target.checked;ls.set('run.settings',S)};
+  $('#st-alert').onchange=e=>{S.paceAlert=e.target.checked;ls.set('run.settings',S)};
+  $('#st-export').onclick=()=>dl(JSON.stringify({settings:S,log:LOG},null,2),'suivi-running.json','application/json');
   let armed=false;$('#st-reset').onclick=e=>{if(!armed){armed=true;e.target.textContent='Appuie encore pour confirmer';return}LOG={};ls.set('run.log',LOG);e.target.textContent='Suivi effacé'};
 }
 
