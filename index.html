@@ -258,7 +258,7 @@ function renderHome(){
     w.s.forEach(s=>{const L=LOG[s.date],missed=s.date<t&&!L&&!s.optional;
       h+=`<button class="row${L?' done':''}${missed?' missed':''}${s.date===t?' today':''}" data-id="${s.date}" style="--c:${COL[s.type]}"><span class="d">${dlabel(s.date)}</span><span class="t">${esc(s.title)}${s.optional?' <em>optionnel</em>':''}</span><span class="k">${L?'✓ '+(FEEL[L.feel]||''):fmtKm(s.km)+' km'}</span></button>`});
     h+='</details>'});
-  h+=`<section class="info"><p><b>Allures</b> · facile ${fp(S.easy)}/km (jamais plus vite que 6:05) · allure 10 km 5:00/km · VMA ${fp(S.vma)}/km</p><p><b>Récup (optionnel)</b> · lundi : 10 min d'étirements · mercredi : 10 min de rouleau.</p><p style="margin:0"><b>Règle anti-blessure</b> · douleur qui persiste ou fatigue inhabituelle → la séance dure devient un footing facile, sans culpabiliser.</p></section>`;
+  h+=`<section class="info"><p><b>Allures</b> · facile ${fp(S.easy)}/km (jamais plus vite que 6:05) · allure 10 km 5:00/km · VMA ${fp(S.vma)}/km</p><p><b>Récup (optionnel)</b> · lundi : 10 min d'étirements · mercredi : 10 min de rouleau.</p><p><b>Règle anti-blessure</b> · douleur qui persiste ou fatigue inhabituelle → la séance dure devient un footing facile, sans culpabiliser.</p><p style="margin:0;font-size:.75rem">Version 2 · GPS</p></section>`;
   $('#v-home').innerHTML=h;
   $('#gear').onclick=()=>nav('set');
 }
@@ -502,7 +502,8 @@ function renderSet(){
 
 /* ---------- démarrage ---------- */
 history.replaceState({v:'home'},'');renderHome();show('home');
-if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js').catch(()=>{});
+if('serviceWorker' in navigator){const had=!!navigator.serviceWorker.controller;navigator.serviceWorker.register('sw.js',{updateViaCache:'none'}).then(r=>r.update()).catch(()=>{});
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{if(had&&!window.__rl&&!(RS&&RS.running)){window.__rl=1;location.reload()}})}
 try{navigator.storage&&navigator.storage.persist&&navigator.storage.persist()}catch(e){}
 </script>
 </body>
